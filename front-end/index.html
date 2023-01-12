@@ -571,13 +571,13 @@
         let files;
         if (data) {
           files = JSON.parse(data);
-          window.fileCache.set(files.parent, files);
+          window.fileCache.set(files.path, files);
           preCache(files, 0);
         } else {
           files = cache;
         }
-        if (files.parent === window.backFordwardCache.current) {
-          renderPath(files.parent);
+        if (files.path === window.backFordwardCache.current) {
+          renderPath(files.path);
           if (files.encrypted) {
             handleEncryptedFolder(files);
           } else {
