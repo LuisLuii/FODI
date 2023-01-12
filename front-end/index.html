@@ -922,7 +922,7 @@
           sendRequest(
             window.api.method,
             window.api.url,
-            window.api.formatPayload(files.path, passwd),
+            window.api.formatPayload(files.parent, passwd),
             window.api.headers,
             (data) => {
               const newFiles = JSON.parse(data);
@@ -1366,8 +1366,8 @@
       async function preCache(files, level) {
         if (level > 1) return;
         files.files.forEach((file) => {
-          const path = files.path === "/" ? "" : files.path;
-          const path = path + "/" + file.name;
+          const path1 = files.path === "/" ? "" : files.path;
+          const path = path1 + "/" + file.name;
           if (!file.url) {
             // console.log('caching ' + path + ', level ' + level);
             window.fileCache.set(path, true);
