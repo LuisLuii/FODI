@@ -1,12 +1,11 @@
-/**
- * IS_CN: 如果为世纪互联版本，请将 0 改为 1
- * EXPOSE_PATH：暴露路径，如全盘展示请留空，否则按 '/媒体/音乐' 的格式填写
- * ONEDRIVE_REFRESHTOKEN: refresh_token
- */
-const IS_CN = 0;
 const EXPOSE_PATH = "";
-const ONEDRIVE_REFRESHTOKEN = "";
+const ONEDRIVE_REFRESHTOKEN = "M.R3_BAY.-Cbe2bjgH6x3K1H3RIS8UbHfF1CvT67EmKJHkqWGgoTaTEGFxEyQw63BSfVre!1yu7y6dg72Z2vTfqtswqWB0EBJ1133msn*wYxjfnlSTr6TIsAyHfaEDHWezNJoEObMNmnmhIr6a98KnkXoO4NadiG8yWZPfxjwywKk7vE1NKPis!3LercKUI2o8XrotGYeltt1siBEvmqVnDHgnLQFeMKpVMw3t1YGutAFeuXkKvLZYKQvaagAlmY9TmplkChJj2HZVFRitSRH9EE!gZrAHnbbYQJWFE6GQ5nhZziEarK9lz5J3ZEuKYHyYUAKt0KGS0SJvdH1fFbQSb83WwYj570c$";
 const PASSWD_FILENAME = ".password";
+const clientId = "78d4dc35-7e46-42c6-9023-2d39314433a5";
+const clientSecret = "ZudGl-p.m=LMmr3VrKgAyOf-WevB3p50";
+const loginHost = "https://login.microsoftonline.com";
+const apiHost = "https://graph.microsoft.com";
+const redirectUri = "http://localhost/onedrive-login";
 
 addEventListener('scheduled', event => {
   event.waitUntil(fetchAccessToken(event.scheduledTime));
@@ -57,13 +56,15 @@ async function handleRequest(request) {
     }
     requestPath = Object.getOwnPropertyNames(body).length ? body["?path"] : "";
     const files = await fetchFiles(requestPath, null, body.passwd);
-    return new Response(files, {
+    const getFolderListResponse = new Response(files, {
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Cache-Control": "max-age=3600",
         "Content-Type": "application/json; charset=utf-8",
       },
     });
+    console.log(getFolderListResponse)
+    return getFolderListResponse;
   }
 }
 
@@ -151,18 +152,95 @@ async function fetchAccessToken() {
   return result.access_token;
 }
 
-async function fetchFiles(path, fileName, passwd) {
-  if (path === "/") path = "";
-  if (path || EXPOSE_PATH) path = ":" + EXPOSE_PATH + path;
 
-  const accessToken = await fetchAccessToken();
+async function filerCaller(path, accessToken) {
+
   const uri =
-    OAUTH.apiUrl +
-    encodeURI(path) +
-    "?expand=children(select=name,size,parentReference,lastModifiedDateTime,@microsoft.graph.downloadUrl)";
-  const body = await getContentWithHeaders(uri, {
+      OAUTH.apiUrl +
+      encodeURI(path) +
+      "?expand=children(select=name,size,parentReference,lastModifiedDateTime,@microsoft.graph.downloadUrl,remoteItem)";
+  return await getContentWithHeaders(uri, {
     Authorization: "Bearer " + accessToken,
   });
+
+}
+
+async function filerCallerByDriveIdAndItemId(driveId, itemId, accessToken) {
+  const rUrl = apiHost + "/v1.0/drives/" + rDId + "/items/" + rId + "?expand=children(select=name,size,parentReference,lastModifiedDateTime,@microsoft.graph.downloadUrl,remoteItem)";
+  return await getContentWithHeaders(rUrl, {
+    Authorization: "Bearer " + accessToken,
+  });
+  
+}
+async function filerCallerBySharedPath(drivePath, accessToken) {
+  const rUrl = apiHost + "/v1.0/drives" + drivePath + "?expand=children(select=name,size,parentReference,lastModifiedDateTime,@microsoft.graph.downloadUrl,remoteItem)";
+  return await getContentWithHeaders(rUrl, {
+    Authorization: "Bearer " + accessToken,
+  });
+  
+}
+
+async function fetchFiles(path, fileName, passwd) {
+  if (path === "/") path = "";
+  let pathPre = path
+  let paths = path.split('/').filter(n => n)
+  if (paths.length === 0) {
+    paths = [""]
+  }
+  let remoteFolder = false
+  let body = null
+  const accessToken = await fetchAccessToken();
+
+  let isSharedFolder = false
+  let concatPath = ""
+  let sharedPath = ""
+  let normalPath = ""
+  for (let levlelPath in paths) {
+    concatPath = "/" + paths[levlelPath]
+    
+    if ((!normalPath && !sharedPath) && (paths[levlelPath] || EXPOSE_PATH)) paths[levlelPath] = ":/" + EXPOSE_PATH + paths[levlelPath];
+    let uri
+    if (!isSharedFolder) {
+      let tempPath = paths[levlelPath]
+      if (normalPath) {
+        tempPath = ":" + normalPath + "/" + paths[levlelPath]
+      }
+      uri =
+      OAUTH.apiUrl +
+      encodeURI(tempPath) +
+      "?expand=children(select=name,size,parentReference,lastModifiedDateTime,@microsoft.graph.downloadUrl,remoteItem)";
+      body = await getContentWithHeaders(uri, {
+        Authorization: "Bearer " + accessToken,
+      });
+
+    } else {
+      let tempPath =  sharedPath  + "/" + paths[levlelPath] 
+      uri = apiHost + "/v1.0" + encodeURI(tempPath) + "?expand=children(select=name,size,parentReference,lastModifiedDateTime,@microsoft.graph.downloadUrl,remoteItem)";
+      body = await getContentWithHeaders(uri, {
+        Authorization: "Bearer " + accessToken,
+      });
+    }
+    
+    if (body && body.remoteItem) {
+      isSharedFolder = true
+      const rDId = body.remoteItem.parentReference.driveId
+      const rId = body.remoteItem.id
+      uri = apiHost + "/v1.0/drives/" + rDId + "/items/" + rId + "?expand=children(select=name,size,parentReference,lastModifiedDateTime,@microsoft.graph.downloadUrl,remoteItem)";
+      body = await getContentWithHeaders(uri, {
+        Authorization: "Bearer " + accessToken,
+      });
+      if (body && body.children && body.children.length > 0) {
+        sharedPath = body.children[0].parentReference.path
+        sharedPath = decodeURI(sharedPath)
+        
+      }
+    }else{
+      if (body && body.children && body.children[0] && body.children[0].parentReference&&body.children[0].parentReference.path  ){
+          normalPath = normalPath + body.children[0].parentReference&&body.children[0].parentReference.path.split(":")[1]
+          normalPath = decodeURI(normalPath)
+      }
+    }
+  }
   if (fileName) {
     let thisFile = null;
     body.children.forEach((file) => {
@@ -174,34 +252,46 @@ async function fetchFiles(path, fileName, passwd) {
     return thisFile;
   } else {
     let files = [];
+    let sharedfiles = [];
     let encrypted = false;
     for (let i = 0; i < body.children.length; i++) {
       const file = body.children[i];
-      if (file.name === PASSWD_FILENAME) {
-        const PASSWD = await getContent(file["@microsoft.graph.downloadUrl"]);
-        if (PASSWD !== passwd) {
-          encrypted = true;
-          break;
-        } else {
-          continue;
+      if (file.remoteItem) {
+        const remoteItemDriveId = file.remoteItem.parentReference.driveId
+        const remoteItemId = file.remoteItem.id
+        const retrieveShareFileUri = apiHost + "/v1.0/drives/" + remoteItemDriveId + "/root" + "?expand=children(select=name,size,parentReference,lastModifiedDateTime,@microsoft.graph.downloadUrl,remoteItem)";
+        const sharedFolderResBody = await getContentWithHeaders(retrieveShareFileUri, {
+          Authorization: "Bearer " + accessToken,
+        });
+        for (let i = 0; i < sharedFolderResBody.children.length; i++) {
+          const sharedFile = sharedFolderResBody.children[i];
+          sharedfiles.push({
+            name: sharedFile.name,
+            size: sharedFile.size,
+            time: sharedFile.lastModifiedDateTime,
+            url: sharedFile["@microsoft.graph.downloadUrl"],
+          });
         }
+        
+      } else {
+        files.push({
+          name: file.name,
+          size: file.size,
+          time: file.lastModifiedDateTime,
+          url: file["@microsoft.graph.downloadUrl"],
+        });
       }
-      files.push({
-        name: file.name,
-        size: file.size,
-        time: file.lastModifiedDateTime,
-        url: file["@microsoft.graph.downloadUrl"],
-      });
     }
-    let parent = body.children.length
-      ? body.children[0].parentReference.path
-      : body.parentReference.path;
-    parent = parent.split(":").pop().replace(EXPOSE_PATH, "") || "/";
-    parent = decodeURIComponent(parent);
+    const allFiles = files.concat(files, sharedfiles)
+    let parent = pathPre
+    parent = pathPre==="" ? "/" : pathPre
+    path = path.replace(":","")
+    path= path==="" ? "/" : path
     if (encrypted) {
-      return JSON.stringify({ parent: parent, files: [], encrypted: true });
+      return JSON.stringify({ parent: parent, files: [], encrypted: true , path: path , pathPre: pathPre});
     } else {
-      return JSON.stringify({ parent: parent, files: files });
+      return JSON.stringify({ parent: parent, files: [...files, ...sharedfiles] , path: path, pathPre: pathPre});
     }
   }
+  
 }
